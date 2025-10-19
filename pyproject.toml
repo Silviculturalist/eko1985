@@ -1,0 +1,5 @@
+[tool.ruff]
+exclude = ["Eko1985.ipynb"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
