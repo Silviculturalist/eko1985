@@ -20,7 +20,7 @@ ENG_TO_SWE = {
     'Broadleaf': 'Öv.löv',
 }
 
-DEFAULT_METRICS: tuple[str, ...] = ('BA', 'N', 'QMD', 'VOL')
+DEFAULT_METRICS: tuple[str, ...] = ('delta:BA', 'delta:N', 'delta:QMD', 'delta:VOL')
 
 _PACKAGE_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_WORKBOOKS: tuple[Path, ...] = (
@@ -138,13 +138,20 @@ def plot_replay_metrics(
             ax.set_xticklabels(event_labels, rotation=45, ha='right')
             ax.set_xlabel('Händelse')
             label = f'{metric_source}:{metric_key}' if metric_source else metric_key
-            ax.set_ylabel(metric_key)
-            ax.set_title(f'{workbook_path.stem} – {label}')
+            if metric_source == 'delta':
+                axis_label = f'{metric_key} (model - expected)'
+                title = f'{workbook_path.stem} – {metric_key} (model - expected)'
+            else:
+                axis_label = metric_key
+                title = f'{workbook_path.stem} – {label}'
+            ax.set_ylabel(axis_label)
+            ax.set_title(title)
             ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.5)
             ax.legend()
             fig.tight_layout()
 
-            figure_path = out_path / f'{workbook_path.stem}_{metric}.png'
+            safe_metric = metric.replace(':', '_')
+            figure_path = out_path / f'{workbook_path.stem}_{safe_metric}.png'
             fig.savefig(figure_path)
             plt.close(fig)
 
