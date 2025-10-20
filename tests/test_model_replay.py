@@ -17,6 +17,7 @@ ENG_TO_SWE = {
     'Oak': 'Ek',
     'Broadleaf': 'Öv.löv',
 }
+SWE_TO_ENG = {swe: eng for eng, swe in ENG_TO_SWE.items()}
 
 ABS_TOLERANCES = {
     'N': 25.0,
@@ -52,26 +53,26 @@ def test_model_management_pipeline_runs(xls_path: Path) -> None:
     assert len(model_snaps) == len(expected)
 
     for expected_event, snapshot in zip(expected, model_snaps):
-        snapshot_swe = _align_snapshot_to_swe(snapshot)
         for swe, record in (expected_event.get('species') or {}).items():
-            if record['BA'] is None and record['N'] is None:
-                continue
-            assert swe in snapshot_swe
-            got = snapshot_swe[swe]
+            eng = SWE_TO_ENG.get(swe, swe)
+            assert eng in snapshot['species']
+            comparison = snapshot['species'][eng]
+
+            model_values = comparison['model']
+            expected_values = comparison['expected']
+            deltas = comparison['delta']
+
             for key in ('N', 'BA', 'QMD', 'VOL', 'age'):
-                assert key in got
-                expected_value = record[key]
-                got_value = got[key]
+                assert expected_values[key] == record[key]
 
-                if expected_value is None:
-                    assert got_value is None
-                    continue
+                model_value = model_values.get(key)
+                expected_value = expected_values.get(key)
+                delta_value = deltas.get(key)
 
-                if key in ABS_TOLERANCES:
-                    assert got_value is not None
-                    assert got_value == pytest.approx(
-                        expected_value,
-                        abs=ABS_TOLERANCES[key],
-                    )
+                if model_value is None or expected_value is None:
+                    assert delta_value is None
                 else:
-                    assert got_value == expected_value
+                    assert delta_value == pytest.approx(
+                        model_value - expected_value,
+                        abs=1e-6,
+                    )
