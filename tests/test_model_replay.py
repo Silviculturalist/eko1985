@@ -1,6 +1,7 @@
 """Parity tests for the packaged Eko 1985 model."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -45,10 +46,23 @@ def _align_snapshot_to_swe(snapshot: dict) -> dict:
         REPO_ROOT / "Output2.xlsx",
     ],
 )
-def test_model_management_pipeline_runs(xls_path: Path) -> None:
+def test_model_management_pipeline_runs(xls_path: Path, artifacts_dir: Path) -> None:
     data = excel_to_json(str(xls_path))
     expected = expected_from_json(data)
     model_snaps = run_management_from_json(data)
+
+    workbook_stem = xls_path.stem
+    expected_path = artifacts_dir / f"{workbook_stem}_expected.json"
+    model_path = artifacts_dir / f"{workbook_stem}_model.json"
+
+    expected_path.write_text(
+        json.dumps(expected, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    model_path.write_text(
+        json.dumps(model_snaps, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     assert len(model_snaps) == len(expected)
 
