@@ -1015,12 +1015,18 @@ class EkoBirch(EkoStandPart):
 
 
 class EkoBroadleaf(EkoStandPart):
+    """Implementation for the grouped "other broadleaf" cohort."""
+
     def __init__(self, ba, stems, age):
         super().__init__(ba, stems, age, Trädslag.ÖV_LÖV)
 
     def getMortality(self, increment=5):
         if self.stand.Site.region in ("North", "Central"):
-            crowding = (-0.7277E-02 + -0.2456E-02 * self.BA + 0.1923E-03 * self.BA ** 2) * increment / 100.0
+            crowding = (
+                -0.7277E-02
+                - 0.2456E-02 * self.BA
+                + 0.1923E-03 * self.BA ** 2
+            ) * increment / 100.0
             other = 0.5 / 100.0
         else:
             crowding = 0.04 * increment / 100.0
@@ -1034,16 +1040,19 @@ class EkoBroadleaf(EkoStandPart):
 
     def getVolume(self, BA=None, QMD=None, age=None, stems=None, HK=None):
         if self.stand is None:
-            raise ValueError("Volume calculator cannot be called before part is connected to EkoStand/EkoStandSite.")
+            raise ValueError(
+                "Volume calculator cannot be called before part is connected to "
+                "EkoStand/EkoStandSite."
+            )
         SIdm = float(self.stand.Site.H100_Spruce or 0.0) * 10
 
         if self.stand.Site.region in ("North", "Central"):
             b1 = -0.04
             b2 = -2.3
-            F4age = (1 - exp(b1 * age))
-            F4basal_area = (1 - exp(b2 * BA))
-            lnVolume = (
-                +1.26649 * log(BA)
+            F4age = 1 - exp(b1 * age)
+            F4basal_area = 1 - exp(b2 * BA)
+            ln_volume = (
+                1.26649 * log(BA)
                 - 0.580030 * F4basal_area
                 + 0.486310 * F4age
                 - 0.172050 * log(stems)
@@ -1054,26 +1063,26 @@ class EkoBroadleaf(EkoStandPart):
                 + 0.417126E-02 * HK
                 + 7.79034
             )
-            return exp(lnVolume + 0.0853)
-        else:
-            b1 = -0.075
-            b2 = -2.1
-            F4age = (1 - exp(b1 * age))
-            F4basal_area = (1 - exp(b2 * BA))
-            lnVolume = (
-                -0.148700E-01 * BA
-                + 1.29359 * log(BA)
-                - 0.784820 * F4basal_area
-                + 1.18741 * F4age
-                - 0.135830 * log(stems)
-                + 0.219890 * log(SIdm)
-                + 2.02656 * log(self.stand.Site.latitude)
-                + 0.242500E-01 * self.stand.Site.thinned
-                + 0.859600E-01 * self.stand.StandBA
-                + 0.509488E-03 * HK
-                + 7.50102
-            )
-            return exp(lnVolume + 0.0671)
+            return exp(ln_volume + 0.0853)
+
+        b1 = -0.075
+        b2 = -2.1
+        F4age = 1 - exp(b1 * age)
+        F4basal_area = 1 - exp(b2 * BA)
+        ln_volume = (
+            -0.148700E-01 * BA
+            + 1.29359 * log(BA)
+            - 0.784820 * F4basal_area
+            + 1.18741 * F4age
+            - 0.135830 * log(stems)
+            + 0.219890 * log(SIdm)
+            + 2.02656 * log(self.stand.Site.latitude)
+            + 0.242500E-01 * self.stand.Site.thinned
+            + 0.859600E-01 * self.stand.StandBA
+            + 0.509488E-03 * HK
+            + 7.50102
+        )
+        return exp(ln_volume + 0.0671)
 
     def getBAI5(self, ba_quotient_chronic_mortality=0.0, ba_quotient_acute_mortality=0.0):
         if self.stand is None:
@@ -1083,10 +1092,10 @@ class EkoBroadleaf(EkoStandPart):
         if self.stand.Site.region in ("North", "Central"):
             independent_vars = (
                 -0.345933 * ba_quotient_chronic_mortality
-                + -0.138015 * self.stand.Site.vegcode
-                + -0.650878E-01 * self.stand.Site.Bilberry_or_Cowberry
-                + -0.175149E-01 * self.stand.Site.latitude
-                + -0.570035E-03 * self.stand.Site.altitude
+                - 0.138015 * self.stand.Site.vegcode
+                - 0.650878E-01 * self.stand.Site.Bilberry_or_Cowberry
+                - 0.175149E-01 * self.stand.Site.latitude
+                - 0.570035E-03 * self.stand.Site.altitude
                 + 0.151318 * self.stand.Site.TAX77
             )
             if SIdm < 160:
@@ -1182,102 +1191,102 @@ class EkoBroadleaf(EkoStandPart):
                         + 1.17865
                     )
             self.BAI5 = exp(dependent_vars + independent_vars + 0.1648)
+            return
 
-        else:
-            independent_vars = (
-                -1.20049 * ba_quotient_chronic_mortality
-                + -0.367064 * ba_quotient_acute_mortality
-                + 0.125048 * self.stand.Site.thinned_5y
-                + 0.246684 * self.stand.Site.fertilised
-                + 0.141955 * self.stand.Site.vegcode
-                + 0.354866E-01 * self.stand.Site.latitude
-                + -0.361988E-03 * self.stand.Site.altitude
-            )
-            if SIdm < 240:
-                if not self.stand.Site.thinned:
-                    dependent_vars = (
-                        +0.857153 * log(self.BA)
-                        - 0.541853E-04 * self.stems
-                        + 0.152684 * log(self.stems)
-                        - 0.803085E-02 * self.age
-                        - 0.570230 * log(self.age)
-                        - 0.100518 * log(self.BAOtherSpecies)
-                        - 1.93895
-                    )
-                else:
-                    dependent_vars = (
-                        +0.857153 * log(self.BA)
-                        - 0.541853E-04 * self.stems
-                        + 0.152684 * log(self.stems)
-                        - 0.803085E-02 * self.age
-                        - 0.570230 * log(self.age)
-                        - 0.100518 * log(self.BAOtherSpecies)
-                        - 2.01960
-                    )
-            elif SIdm < 280:
-                if not self.stand.Site.thinned:
-                    dependent_vars = (
-                        +0.794405 * log(self.BA)
-                        - 0.247009 * self.stems
-                        + 0.202344 * log(self.stems)
-                        - 0.250423 * self.age
-                        - 0.669629 * log(self.age)
-                        - 0.101205 * log(self.BAOtherSpecies)
-                        - 1.93895
-                    )
-                else:
-                    dependent_vars = (
-                        +0.794405 * log(self.BA)
-                        - 0.247009 * self.stems
-                        + 0.202344 * log(self.stems)
-                        - 0.250423 * self.age
-                        - 0.669629 * log(self.age)
-                        - 0.101205 * log(self.BAOtherSpecies)
-                        - 2.01960
-                    )
-            elif SIdm < 320:
-                if not self.stand.Site.thinned:
-                    dependent_vars = (
-                        +0.782374 * log(self.BA)
-                        - 0.125111E-03 * self.stems
-                        + 0.239626 * log(self.stems)
-                        - 0.787146E-03 * self.age
-                        - 0.733575 * log(self.age)
-                        - 0.823802E-01 * log(self.BAOtherSpecies)
-                        - 1.93895
-                    )
-                else:
-                    dependent_vars = (
-                        +0.782374 * log(self.BA)
-                        - 0.125111E-03 * self.stems
-                        + 0.239626 * log(self.stems)
-                        - 0.787146E-03 * self.age
-                        - 0.733575 * log(self.age)
-                        - 0.823802E-01 * log(self.BAOtherSpecies)
-                        - 2.01960
-                    )
+        independent_vars = (
+            -1.20049 * ba_quotient_chronic_mortality
+            - 0.367064 * ba_quotient_acute_mortality
+            + 0.125048 * self.stand.Site.thinned_5y
+            + 0.246684 * self.stand.Site.fertilised
+            + 0.141955 * self.stand.Site.vegcode
+            + 0.354866E-01 * self.stand.Site.latitude
+            - 0.361988E-03 * self.stand.Site.altitude
+        )
+        if SIdm < 240:
+            if not self.stand.Site.thinned:
+                dependent_vars = (
+                    +0.857153 * log(self.BA)
+                    - 0.541853E-04 * self.stems
+                    + 0.152684 * log(self.stems)
+                    - 0.803085E-02 * self.age
+                    - 0.570230 * log(self.age)
+                    - 0.100518 * log(self.BAOtherSpecies)
+                    - 1.93895
+                )
             else:
-                if not self.stand.Site.thinned:
-                    dependent_vars = (
-                        +0.771398 * log(self.BA)
-                        + 0.427071E-04 * self.stems
-                        + 0.167037 * log(self.stems)
-                        - 0.190695E-02 * self.age
-                        - 0.587696 * log(self.age)
-                        - 0.113489 * log(self.BAOtherSpecies)
-                        - 1.93895
-                    )
-                else:
-                    dependent_vars = (
-                        +0.771398 * log(self.BA)
-                        + 0.427071E-04 * self.stems
-                        + 0.167037 * log(self.stems)
-                        - 0.190695E-02 * self.age
-                        - 0.587696 * log(self.age)
-                        - 0.113489 * log(self.BAOtherSpecies)
-                        - 2.01960
-                    )
-            self.BAI5 = exp(dependent_vars + independent_vars + 0.1734)
+                dependent_vars = (
+                    +0.857153 * log(self.BA)
+                    - 0.541853E-04 * self.stems
+                    + 0.152684 * log(self.stems)
+                    - 0.803085E-02 * self.age
+                    - 0.570230 * log(self.age)
+                    - 0.100518 * log(self.BAOtherSpecies)
+                    - 2.01960
+                )
+        elif SIdm < 280:
+            if not self.stand.Site.thinned:
+                dependent_vars = (
+                    +0.794405 * log(self.BA)
+                    - 0.247009 * self.stems
+                    + 0.202344 * log(self.stems)
+                    - 0.250423 * self.age
+                    - 0.669629 * log(self.age)
+                    - 0.101205 * log(self.BAOtherSpecies)
+                    - 1.93895
+                )
+            else:
+                dependent_vars = (
+                    +0.794405 * log(self.BA)
+                    - 0.247009 * self.stems
+                    + 0.202344 * log(self.stems)
+                    - 0.250423 * self.age
+                    - 0.669629 * log(self.age)
+                    - 0.101205 * log(self.BAOtherSpecies)
+                    - 2.01960
+                )
+        elif SIdm < 320:
+            if not self.stand.Site.thinned:
+                dependent_vars = (
+                    +0.782374 * log(self.BA)
+                    - 0.125111E-03 * self.stems
+                    + 0.239626 * log(self.stems)
+                    - 0.787146E-03 * self.age
+                    - 0.733575 * log(self.age)
+                    - 0.823802E-01 * log(self.BAOtherSpecies)
+                    - 1.93895
+                )
+            else:
+                dependent_vars = (
+                    +0.782374 * log(self.BA)
+                    - 0.125111E-03 * self.stems
+                    + 0.239626 * log(self.stems)
+                    - 0.787146E-03 * self.age
+                    - 0.733575 * log(self.age)
+                    - 0.823802E-01 * log(self.BAOtherSpecies)
+                    - 2.01960
+                )
+        else:
+            if not self.stand.Site.thinned:
+                dependent_vars = (
+                    +0.771398 * log(self.BA)
+                    + 0.427071E-04 * self.stems
+                    + 0.167037 * log(self.stems)
+                    - 0.190695E-02 * self.age
+                    - 0.587696 * log(self.age)
+                    - 0.113489 * log(self.BAOtherSpecies)
+                    - 1.93895
+                )
+            else:
+                dependent_vars = (
+                    +0.771398 * log(self.BA)
+                    + 0.427071E-04 * self.stems
+                    + 0.167037 * log(self.stems)
+                    - 0.190695E-02 * self.age
+                    - 0.587696 * log(self.age)
+                    - 0.113489 * log(self.BAOtherSpecies)
+                    - 2.01960
+                )
+        self.BAI5 = exp(dependent_vars + independent_vars + 0.1734)
 
 
 class EkoBeech(EkoStandPart):
