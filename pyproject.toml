@@ -1,3 +1,13 @@
+[project]
+name = "eko1985"
+version = "0.1.0"
+dependencies = [
+    "matplotlib",
+]
+
+[project.scripts]
+run-tests-and-plot = "eko1985.visualize:main"
+
 [tool.ruff]
 exclude = ["Eko1985.ipynb"]
 
