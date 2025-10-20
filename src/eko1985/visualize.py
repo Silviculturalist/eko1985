@@ -40,6 +40,16 @@ def _align_species(snapshot: dict) -> dict[str, dict]:
     return aligned
 
 
+def _parse_metric_spec(metric: str) -> tuple[str, str]:
+    """Split metric specifications into their source and key components."""
+
+    for delimiter in (':', '.'):
+        if delimiter in metric:
+            source, key = metric.split(delimiter, 1)
+            return source.strip(), key.strip()
+    return 'model', metric.strip()
+
+
 def plot_replay_metrics(
     xls_paths: Iterable[str | Path],
     output_dir: str | Path,
@@ -54,7 +64,10 @@ def plot_replay_metrics(
     output_dir:
         Directory where generated figures should be written.
     metrics:
-        Sequence of metric keys (e.g. ``"BA"`` or ``"N"``) to visualise.
+        Sequence of metric specifications to visualise. A metric can be provided
+        either as a bare key (e.g. ``"BA"``) which will default to the
+        ``"model"`` values, or as ``"source:key"`` / ``"source.key"`` to select
+        an explicit source such as ``"expected:BA"``.
 
     Returns
     -------
@@ -95,11 +108,19 @@ def plot_replay_metrics(
         workbook_saved: list[Path] = []
 
         for metric in metrics:
+            metric_source, metric_key = _parse_metric_spec(metric)
             series_by_species: dict[str, list[float]] = defaultdict(list)
             for swe_name in species_order:
                 for snap in aligned_snaps:
-                    values = snap.get(swe_name)
-                    value = (values or {}).get(metric) if values else None
+                    species_entry = snap.get(swe_name)
+                    if not isinstance(species_entry, dict):
+                        value = None
+                    else:
+                        source_block = species_entry.get(metric_source)
+                        if not isinstance(source_block, dict):
+                            value = None
+                        else:
+                            value = source_block.get(metric_key)
                     series_by_species[swe_name].append(
                         float(value) if value is not None else nan
                     )
@@ -116,8 +137,9 @@ def plot_replay_metrics(
             ax.set_xticks(x_positions)
             ax.set_xticklabels(event_labels, rotation=45, ha='right')
             ax.set_xlabel('Händelse')
-            ax.set_ylabel(metric)
-            ax.set_title(f'{workbook_path.stem} – {metric}')
+            label = f'{metric_source}:{metric_key}' if metric_source else metric_key
+            ax.set_ylabel(metric_key)
+            ax.set_title(f'{workbook_path.stem} – {label}')
             ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.5)
             ax.legend()
             fig.tight_layout()
