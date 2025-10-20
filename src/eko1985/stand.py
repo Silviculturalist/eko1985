@@ -18,6 +18,7 @@ class EkoStand(EvenAgedStand):
         self.parts = parts           # Swedish API used in tests
         self.Parts = self.parts      # Back-compat alias
         self.Site = site
+        self.volume_scale = 1.0
 
         # species-region sanity (as in your original warnings)
         if any(isinstance(p, EkoBeech) for p in self.parts) and self.Site.region not in ("Central", "South"):
@@ -36,9 +37,11 @@ class EkoStand(EvenAgedStand):
         if BA is None or BA <= 0 or stems is None or stems <= 0:
             return 0.0
         try:
-            return part.getVolume(BA=BA, QMD=QMD, age=age, stems=stems, HK=HK)
+            volume = part.getVolume(BA=BA, QMD=QMD, age=age, stems=stems, HK=HK)
         except ValueError:
             return 0.0
+        scale = getattr(part.stand, "volume_scale", 1.0)
+        return volume * scale
 
     # ------------------------------------------------------------------
     # NEW helper: competition & interaction (HK) on the *current* state

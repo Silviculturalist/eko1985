@@ -19,7 +19,7 @@ class EkoSpruce(EkoStandPart):
         if self.stand.Site.region in ("North", "Central"):
             AKL = min((int(self.age) // 10) + 1, 17)
             crowding = (-0.2748E-02 + 0.4493E-03 * self.BA + 0.2515E-04 * self.BA ** 2) * increment / 100.0
-            other = -0.3150E-03 + 0.3337E-01 * AKL  # fraction of BA over the period
+            other = (-0.3150E-03 + 0.3337E-01 * AKL) / 100.0  # fraction of BA over the period
         else:
             stems2 = min(self.stems, 2800)
             crowding = (

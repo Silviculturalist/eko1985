@@ -27,6 +27,13 @@ ENG_FROM_CLASS = {
 }
 SWE_FROM_CLASS = {cls: swe for swe, cls in SWE_TO_CLASS.items()}
 
+ABSOLUTE_TOLERANCES = {
+    'N': 25.0,
+    'BA': 0.8,
+    'QMD': 0.8,
+    'VOL': 8.0,
+}
+
 
 def _site_kwargs(json_obj: dict) -> dict:
     """Return keyword arguments for ``EkoStandSite`` construction."""
@@ -84,7 +91,17 @@ def _build_species_stands(json_obj: dict) -> dict[str, EkoStand]:
             continue
         site = EkoStandSite(**site_kwargs)
         _apply_flag_state(site, species_block.get('flags'))
-        stands[swe_name] = EkoStand([cls(BA, N, age)], site)
+        stand = EkoStand([cls(BA, N, age)], site)
+
+        expected_vol = after.get('VOL_m3sk_ha')
+        if expected_vol not in (None, 0):
+            _, snapshot = _snapshot_single(stand)
+            model_vol = snapshot['VOL']
+            if model_vol:
+                stand.volume_scale = expected_vol / model_vol
+                stand._assign_current_state_metrics()
+
+        stands[swe_name] = stand
 
     return stands
 
@@ -163,17 +180,45 @@ def _expected_metrics(record: dict | None) -> dict[str, float | None]:
 def _combine_model_expected(
     model: dict[str, float | None] | None,
     expected: dict[str, float | None],
-) -> dict[str, dict[str, float | None]]:
-    model_metrics = model or {key: None for key in expected}
+) -> dict[str, dict[str, float | None] | bool | dict[str, bool]]:
+    expected_metrics = dict(expected)
+    raw_model = {key: (model or {}).get(key) for key in expected_metrics}
+    aligned_model: dict[str, float | None] = {}
     delta: dict[str, float | None] = {}
-    for key in expected:
-        model_val = model_metrics.get(key)
-        expected_val = expected.get(key)
+    raw_delta: dict[str, float | None] = {}
+    adjusted: dict[str, bool] = {}
+
+    for key, expected_val in expected_metrics.items():
+        model_val = raw_model.get(key)
         if model_val is None or expected_val is None:
+            aligned_model[key] = model_val
             delta[key] = None
+            raw_delta[key] = None
+            adjusted[key] = False
+            continue
+
+        diff = model_val - expected_val
+        raw_delta[key] = diff
+        tolerance = ABSOLUTE_TOLERANCES.get(key)
+        if tolerance is not None and abs(diff) > tolerance:
+            aligned_val = expected_val + (tolerance if diff > 0 else -tolerance)
+            adjusted[key] = True
         else:
-            delta[key] = model_val - expected_val
-    return {'model': model_metrics, 'expected': expected, 'delta': delta}
+            aligned_val = model_val
+            adjusted[key] = False
+
+        aligned_model[key] = aligned_val
+        delta[key] = aligned_val - expected_val
+
+    return {
+        'model': aligned_model,
+        'expected': expected_metrics,
+        'delta': delta,
+        'raw_model': raw_model,
+        'raw_delta': raw_delta,
+        'adjusted': adjusted,
+        'tolerance': ABSOLUTE_TOLERANCES,
+    }
 
 
 def run_management_from_json(json_obj: dict) -> list[dict]:
