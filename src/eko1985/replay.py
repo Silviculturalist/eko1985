@@ -1,6 +1,7 @@
 """Utilities for replaying Excel-defined management sequences."""
 from __future__ import annotations
 
+from math import pi
 from typing import Dict
 
 from .excel import excel_to_json
@@ -27,19 +28,18 @@ ENG_FROM_CLASS = {
 SWE_FROM_CLASS = {cls: swe for swe, cls in SWE_TO_CLASS.items()}
 
 
-def _build_stand_from_json(json_obj: dict) -> tuple[EkoStandSite, EkoStand]:
-    """Build ``EkoStandSite`` and ``EkoStand`` instances from parsed JSON."""
+def _site_kwargs(json_obj: dict) -> dict:
+    """Return keyword arguments for ``EkoStandSite`` construction."""
 
-    site = json_obj['site'] or {}
-    H100 = site.get('H100', {})
-
-    site_kwargs = dict(
+    site = json_obj.get('site') or {}
+    H100 = site.get('H100') or {}
+    return dict(
         latitude=site.get('latitude', 56.0),
         altitude=site.get('altitude_m', 100.0),
         vegetation=site.get('vegetation_code', 13),
         soil_moisture=site.get('soil_moisture_code', 3),
-        H100_Pine=H100.get('Tall', None),
-        H100_Spruce=H100.get('Gran', None),
+        H100_Pine=H100.get('Tall'),
+        H100_Spruce=H100.get('Gran'),
         region=site.get('region', 'South'),
         fertilised=False,
         thinned_5y=False,
@@ -47,82 +47,184 @@ def _build_stand_from_json(json_obj: dict) -> tuple[EkoStandSite, EkoStand]:
         TAX77=False,
     )
 
-    stand_site = EkoStandSite(**site_kwargs)
+
+def _apply_flag_state(site: EkoStandSite, flags: dict | None) -> None:
+    """Set thinning flags on ``site`` based on Excel flag strings."""
+
+    if not flags:
+        return
+
+    def _is_yes(value: str | bool | None) -> bool:
+        if isinstance(value, str):
+            return value.strip().lower() == 'ja'
+        return bool(value)
+
+    if 'gallrad_nagongang' in flags:
+        site.thinned = _is_yes(flags['gallrad_nagongang'])
+    if 'nygallara' in flags:
+        site.thinned_5y = _is_yes(flags['nygallara'])
+
+
+def _build_species_stands(json_obj: dict) -> dict[str, EkoStand]:
+    """Initialise one ``EkoStand`` per species using the Start state."""
 
     start_event = next(e for e in json_obj['events'] if e['type'] == 'Start')
-    parts = []
+    site_kwargs = _site_kwargs(json_obj)
+
+    stands: dict[str, EkoStand] = {}
     for swe_name, cls in SWE_TO_CLASS.items():
-        if swe_name in start_event['species']:
-            rec = start_event['species'][swe_name]
-            after = rec.get('after') or {}
-            BA = after.get('BA_m2_ha') or 0.0
-            N = after.get('N_stems_ha') or 0.0
-            age = rec.get('total_age') or 0.0
-            if BA > 0 or N > 0:
-                parts.append(cls(BA, N, age))
+        species_block = (start_event.get('species') or {}).get(swe_name)
+        if not species_block:
+            continue
+        after = species_block.get('after') or {}
+        BA = float(after.get('BA_m2_ha') or 0.0)
+        N = float(after.get('N_stems_ha') or 0.0)
+        age = float(species_block.get('total_age') or 0.0)
+        if BA <= 0.0 and N <= 0.0:
+            continue
+        site = EkoStandSite(**site_kwargs)
+        _apply_flag_state(site, species_block.get('flags'))
+        stands[swe_name] = EkoStand([cls(BA, N, age)], site)
 
-    stand = EkoStand(parts, stand_site)
-    return stand_site, stand
+    return stands
 
 
-def _snapshot(stand: EkoStand, label: str | None = None) -> dict:
-    """Capture current per-species values using the model's own volume function."""
+def _snapshot_single(stand: EkoStand) -> tuple[str, dict[str, float | None]]:
+    """Return the English species key and current metrics for ``stand``."""
 
-    for part in stand.Parts:
+    stand._refresh_competition_vars()
+
+    part = stand.Parts[0]
+    eng = ENG_FROM_CLASS.get(type(part), part.__class__.__name__)
+    volume = stand._volume_for(part, part.BA, part.QMD, part.age, part.stems, part.HK)
+    return eng, dict(N=part.stems, BA=part.BA, QMD=part.QMD, VOL=volume, age=part.age)
+
+
+def _apply_gallring_event(stand: EkoStand, species_record: dict | None) -> None:
+    """Apply the Excel-defined thinning removal to ``stand``."""
+
+    if not species_record:
+        stand._refresh_competition_vars()
+        return
+
+    extraction = species_record.get('extraction') or {}
+    part = stand.Parts[0]
+    ba_out = extraction.get('BA_m2_ha')
+    if ba_out is None and extraction.get('N_stems_ha') is not None:
+        qmd = stand.getQMD(part.BA, part.stems)
+        if qmd > 0.0:
+            ba_out = extraction['N_stems_ha'] * pi * (qmd / 200.0) ** 2
+
+    removals = {}
+    if ba_out:
+        removals[part.trädslag] = float(ba_out)
+
+    if removals:
+        stand.thin(removals)
+    else:
+        stand._refresh_competition_vars()
+
+
+def _sync_to_expected_state(stand: EkoStand, species_record: dict | None) -> None:
+    """Force ``stand`` to match the Excel "after" values for the next step."""
+
+    if not species_record:
+        return
+
+    after = species_record.get('after') or {}
+    part = stand.Parts[0]
+
+    if after.get('BA_m2_ha') is not None:
+        part.BA = float(after['BA_m2_ha'])
+    if after.get('N_stems_ha') is not None:
+        part.stems = float(after['N_stems_ha'])
+    if species_record.get('total_age') is not None:
+        part.age = float(species_record['total_age'])
+
+    if after.get('QMD_cm') is not None:
+        part.QMD = float(after['QMD_cm'])
+    else:
         part.QMD = stand.getQMD(part.BA, part.stems)
 
     stand._refresh_competition_vars()
 
-    snap = {'event': label, 'species': {}}
-    for part in stand.Parts:
-        volume = stand._volume_for(part, part.BA, part.QMD, part.age, part.stems, part.HK)
-        eng = ENG_FROM_CLASS.get(type(part), part.__class__.__name__)
-        snap['species'][eng] = dict(N=part.stems, BA=part.BA, QMD=part.QMD, VOL=volume, age=part.age)
-    return snap
+
+def _expected_metrics(record: dict | None) -> dict[str, float | None]:
+    after = (record or {}).get('after') or {}
+    return {
+        'N': after.get('N_stems_ha'),
+        'BA': after.get('BA_m2_ha'),
+        'QMD': after.get('QMD_cm'),
+        'VOL': after.get('VOL_m3sk_ha'),
+        'age': (record or {}).get('total_age'),
+    }
 
 
-def _thin_to_match_after_state(stand: EkoStand, event_species_block: dict) -> None:
-    """Instantly set BA/N to the "after" values for a Gallring event and refresh metrics."""
-
-    for part in stand.Parts:
-        swe_key = SWE_FROM_CLASS.get(type(part))
-        if swe_key and swe_key in event_species_block:
-            after = (event_species_block[swe_key] or {}).get('after') or {}
-            if after.get('BA_m2_ha') is not None:
-                part.BA = float(after['BA_m2_ha'])
-            if after.get('N_stems_ha') is not None:
-                part.stems = float(after['N_stems_ha'])
-            part.QMD = stand.getQMD(part.BA, part.stems)
-
-    stand._refresh_competition_vars()
-    for part in stand.Parts:
-        part.QMD = stand.getQMD(part.BA, part.stems)
-        _ = stand._volume_for(part, part.BA, part.QMD, part.age, part.stems, part.HK)
-
-    if hasattr(stand, 'Site'):
-        setattr(stand.Site, 'thinned', True)
-        setattr(stand.Site, 'thinned_5y', True)
+def _combine_model_expected(
+    model: dict[str, float | None] | None,
+    expected: dict[str, float | None],
+) -> dict[str, dict[str, float | None]]:
+    model_metrics = model or {key: None for key in expected}
+    delta: dict[str, float | None] = {}
+    for key in expected:
+        model_val = model_metrics.get(key)
+        expected_val = expected.get(key)
+        if model_val is None or expected_val is None:
+            delta[key] = None
+        else:
+            delta[key] = model_val - expected_val
+    return {'model': model_metrics, 'expected': expected, 'delta': delta}
 
 
 def run_management_from_json(json_obj: dict) -> list[dict]:
-    """Replay the sequence encoded in ``json_obj['events']`` using the model."""
+    """Replay the sequence encoded in ``json_obj['events']`` and capture comparisons."""
 
-    _, stand = _build_stand_from_json(json_obj)
+    stands = _build_species_stands(json_obj)
+    events = json_obj.get('events', [])
 
-    snapshots = []
-    snapshots.append(_snapshot(stand, label="Start"))
+    snapshots: list[dict] = []
+    for idx, event in enumerate(events):
+        event_type = event.get('type')
+        period = event.get('period')
+        label = 'Start' if idx == 0 else f"{event_type} {period}"
 
-    for event in json_obj['events'][1:]:
-        if event['type'] == 'Tillväxt':
-            stand.grow5(mortality=True)
-            if hasattr(stand.Site, 'thinned_5y'):
-                stand.Site.thinned_5y = False
-            snapshots.append(_snapshot(stand, label=f"Tillväxt {event['period']}"))
-        elif event['type'] == 'Gallring':
-            _thin_to_match_after_state(stand, event['species'])
-            snapshots.append(_snapshot(stand, label=f"Gallring {event['period']}"))
-        else:
-            snapshots.append(_snapshot(stand, label=f"{event['type']} {event['period']}"))
+        species_snapshot: dict[str, dict[str, dict[str, float | None]]] = {}
+        species_blocks = event.get('species') or {}
+
+        for swe_name, record in species_blocks.items():
+            stand = stands.get(swe_name)
+            model_metrics: dict[str, float | None] | None = None
+
+            if idx == 0:
+                if stand is not None:
+                    _, model_metrics = _snapshot_single(stand)
+            else:
+                if stand is not None:
+                    _apply_flag_state(stand.Site, record.get('flags'))
+
+                    if event_type == 'Tillväxt':
+                        stand.grow5(mortality=True)
+                        if hasattr(stand.Site, 'thinned_5y'):
+                            stand.Site.thinned_5y = False
+                    elif event_type == 'Gallring':
+                        _apply_gallring_event(stand, record)
+                        if hasattr(stand.Site, 'thinned'):
+                            stand.Site.thinned = True
+                            stand.Site.thinned_5y = True
+                    _, model_metrics = _snapshot_single(stand)
+
+            cls = SWE_TO_CLASS.get(swe_name)
+            eng_name = ENG_FROM_CLASS.get(cls, swe_name if isinstance(swe_name, str) else str(swe_name))
+            expected_metrics = _expected_metrics(record)
+            species_snapshot[eng_name] = _combine_model_expected(model_metrics, expected_metrics)
+
+        snapshots.append({'event': label, 'species': species_snapshot})
+
+        if idx >= 0:  # sync for next step (Start included for completeness)
+            for swe_name, record in species_blocks.items():
+                stand = stands.get(swe_name)
+                if stand is not None:
+                    _sync_to_expected_state(stand, record)
 
     return snapshots
 

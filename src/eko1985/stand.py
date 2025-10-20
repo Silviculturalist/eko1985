@@ -52,7 +52,7 @@ class EkoStand(EvenAgedStand):
         for p in self.parts:
             BA_other = safe_sum(q.BA for q in self.parts if q is not p)
             N_other = safe_sum(q.stems for q in self.parts if q is not p)
-            p.BAOtherSpecies = BA_other
+            p.BAOtherSpecies = BA_other if BA_other > 0 else 1e-6
             p.QMDOtherSpecies = self.getQMD(BA_other, N_other)
             denom = p.QMD if p.QMD > 0 else 1e-9
             p.HK = (p.QMDOtherSpecies / denom) * BA_other
