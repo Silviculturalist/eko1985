@@ -88,5 +88,5 @@ def test_model_management_pipeline_runs(xls_path: Path, artifacts_dir: Path) -> 
                 else:
                     assert delta_value == pytest.approx(
                         model_value - expected_value,
-                        abs=1e-6,
+                        abs=1e-9,
                     )
