@@ -7,20 +7,29 @@ import warnings
 from .base import EkoStandPart, EvenAgedStand
 from .site import EkoStandSite
 from .species import EkoBeech, EkoOak
-from .utils import safe_sum
+
+from math import pi
+
+def _safe_sum(iterable):
+    total = 0.0
+    for v in iterable:
+        total += float(v)
+    return total
 
 
 class EkoStand(EvenAgedStand):
-    """Aggregate stand container combining cohorts with their site."""
+    """
+    parts: list[EkoStandPart]
+    site:  EkoStandSite
+    """
     def __init__(self, parts, site: EkoStandSite):
         if not all(isinstance(p, EkoStandPart) for p in parts):
             raise ValueError("All StandParts must be EkoStandPart objects!")
-        self.parts = parts           # Swedish API used in tests
+        self.parts = parts           # Swedish-style API
         self.Parts = self.parts      # Back-compat alias
         self.Site = site
-        self.volume_scale = 1.0
 
-        # species-region sanity (as in your original warnings)
+        # Optional sanity: warn if Beech/Oak in non-southern regions
         if any(isinstance(p, EkoBeech) for p in self.parts) and self.Site.region not in ("Central", "South"):
             warnings.warn("Setting Beech stand outside of southern Sweden!")
         if any(isinstance(p, EkoOak) for p in self.parts) and self.Site.region not in ("Central", "South"):
@@ -29,39 +38,29 @@ class EkoStand(EvenAgedStand):
         for p in self.parts:
             p.register_stand(self)
 
-        # initialize all metrics once
+        # Initialize all derived metrics once
         self._assign_current_state_metrics()
 
-    @staticmethod
-    def _volume_for(part: EkoStandPart, BA: float, QMD: float, age: float, stems: float, HK: float) -> float:
-        if BA is None or BA <= 0 or stems is None or stems <= 0:
-            return 0.0
-        try:
-            volume = part.getVolume(BA=BA, QMD=QMD, age=age, stems=stems, HK=HK)
-        except ValueError:
-            return 0.0
-        scale = getattr(part.stand, "volume_scale", 1.0)
-        return volume * scale
-
     # ------------------------------------------------------------------
-    # NEW helper: competition & interaction (HK) on the *current* state
+    # Competition / interaction metrics (HK etc.)
     # ------------------------------------------------------------------
     def _competition_metrics(self) -> None:
         """Compute per-part competition metrics from the current net state."""
-        # ensure own QMD is current
+        # Ensure own QMD is current
         for p in self.parts:
             p.QMD = self.getQMD(p.BA, p.stems)
-        # competition from others
+        # Competition from all *other* parts
         for p in self.parts:
-            BA_other = safe_sum(q.BA for q in self.parts if q is not p)
-            N_other = safe_sum(q.stems for q in self.parts if q is not p)
-            p.BAOtherSpecies = BA_other if BA_other > 0 else 1e-6
+            BA_other = _safe_sum(q.BA for q in self.parts if q is not p)
+            N_other = _safe_sum(q.stems for q in self.parts if q is not p)
+            p.BAOtherSpecies = BA_other
             p.QMDOtherSpecies = self.getQMD(BA_other, N_other)
             denom = p.QMD if p.QMD > 0 else 1e-9
+            # HK: diameter-based competition index, *not* height
             p.HK = (p.QMDOtherSpecies / denom) * BA_other
 
     # ------------------------------------------------------------------
-    # NEW helper: fully assign all CURRENT state metrics
+    # Assign all current-state metrics: QMD, HK, VOL, stand totals
     # ------------------------------------------------------------------
     def _assign_current_state_metrics(self) -> None:
         """
@@ -71,128 +70,199 @@ class EkoStand(EvenAgedStand):
         """
         self._competition_metrics()
         for p in self.parts:
-            p.VOL = self._volume_for(p, p.BA, p.QMD, p.age, p.stems, p.HK)
+            p.VOL = p.getVolume(BA=p.BA, QMD=p.QMD, age=p.age,
+                                stems=p.stems, HK=p.HK)
 
-        self.StandBA = safe_sum(p.BA for p in self.parts)
-        self.StandStems = safe_sum(p.stems for p in self.parts)
-        self.StandVOL = safe_sum(p.VOL for p in self.parts)
+        self.StandBA = _safe_sum(p.BA for p in self.parts)
+        self.StandStems = _safe_sum(p.stems for p in self.parts)
+        self.StandVOL = _safe_sum(p.VOL for p in self.parts)
 
-    # Back-compat alias used by tests’ _snapshot()
+    # Back-compat alias some old code may call
     def _refresh_competition_vars(self) -> None:
         self._assign_current_state_metrics()
 
-    # Thinning: constant-QMD removal; refresh metrics afterward
+    # ------------------------------------------------------------------
+    # Thinning (constant-QMD removal)
+    # ------------------------------------------------------------------
     def thin(self, removals: dict):
         """
-        removals: dict keyed by part.trädslag (enum) or species string; value = BA (m²/ha) to remove.
-        Stems removed computed at current QMD (constant‑QMD removal).
+        removals: dict keyed by part.trädslag (enum) or species string; 
+                  value = BA (m²/ha) to remove.
+        Stems removed computed at current QMD (constant-QMD removal).
         """
         for p in self.parts:
-            key_variants = (p.trädslag, getattr(p.trädslag, "value", None), str(getattr(p.trädslag, "value", "")))
+            key_variants = (
+                p.trädslag,
+                getattr(p.trädslag, "value", None),
+                str(getattr(p.trädslag, "value", "")),
+            )
             BA_out = 0.0
             for k in key_variants:
                 if k in removals:
                     BA_out = float(removals[k])
                     break
+
             BA_out = max(0.0, min(BA_out, p.BA))
             if BA_out > 0.0 and p.QMD > 0:
+                # BA per tree = π * (d/200)²  (d in cm → m)
                 stems_out = BA_out / (pi * (p.QMD / 200.0) ** 2)
                 p.BA -= BA_out
                 p.stems = max(0.0, p.stems - stems_out)
+
         self._assign_current_state_metrics()
 
-    # Five-year growth step (thesis order-of-ops). Returns dict with N1/BA1/QMD1/VOL1.
+    # ------------------------------------------------------------------
+    # Five-year growth step: mortality + BAI (IGNORES HEIGHT TRAJECTORIES)
+    # ------------------------------------------------------------------
     def grow(self, years: int = 5, apply_mortality: bool = True):
-        # 0) Start-of-period: initialize competition/interaction and totals
+        """
+        Advance the stand 'years' years (default 5).
+        Mirrors the C++ updater (mortality + BAI applied in one step),
+        but still ignores height trajectories (RK, RM2, etc.).
+        Returns a dict keyed by species with N1, BA1, QMD1, VOL1.
+        """
+        # 0) Start-of-period metrics
         self._assign_current_state_metrics()
 
-        # Start-of-period snapshot volumes for bookkeeping
+        # Snapshot starting metrics
+        start_state = []
         for p in self.parts:
-            p.VOL0 = self._volume_for(p, p.BA, p.QMD, p.age, p.stems, p.HK)
+            start_state.append({
+                "part": p,
+                "BA": p.BA,
+                "stems": p.stems,
+                "age": p.age,
+                "QMD": p.QMD,
+                "VOL": p.getVolume(BA=p.BA, QMD=p.QMD, age=p.age,
+                                   stems=p.stems, HK=p.HK),
+            })
+            p.VOL0 = start_state[-1]["VOL"]
 
-        # 1) gross BAI + 2) natural mortality
+        # 1) Mortality fractions + 2) Basal area increment (on start state)
+        mortality = []
         for p in self.parts:
             if apply_mortality:
-                BAQ_crowd, QMD_dead_crowd, BAQ_other, QMD_dead_other = p.getMortality(increment=years)
+                (
+                    BAQ_crowd,
+                    _QMD_dead_crowd,
+                    BAQ_other,
+                    _QMD_dead_other,
+                ) = p.getMortality(increment=years)
             else:
                 BAQ_crowd = BAQ_other = 0.0
-                QMD_dead_crowd = 0.9 * (p.QMD or 0.0)
-                QMD_dead_other = (p.QMD or 0.0)
 
-            # gross basal area increment using correct mortality quotients as inputs
             p.getBAI5(
                 ba_quotient_chronic_mortality=BAQ_crowd,
                 ba_quotient_acute_mortality=BAQ_other,
             )
+            mortality.append({
+                "q_crowd": BAQ_crowd,
+                "q_other": BAQ_other,
+                "q_total": BAQ_crowd + BAQ_other,
+            })
 
-            # End-of-period before removals
-            p.BA1 = p.BA + p.BAI5
-            p.stems1 = p.stems  # no ingrowth modeled here
-            p.age2 = p.age + years
-            p.QMD1 = self.getQMD(p.BA1, p.stems1)
-
-            # Natural mortality based on start-of-period BA
-            p.BA_Mortality = (BAQ_crowd + BAQ_other) * p.BA
-            if p.QMD > 0:
-                stems_other = p.BA * BAQ_other / (pi * ((QMD_dead_other / 200.0) ** 2))
-                stems_crowd = p.BA * BAQ_crowd / (pi * ((QMD_dead_crowd / 200.0) ** 2))
+        # 3) Apply mortality + growth in one step (C++: ApplyMortalityAndGrowth)
+        next_state = []
+        for idx, p in enumerate(self.parts):
+            q_total = mortality[idx]["q_total"] if apply_mortality else 0.0
+            if apply_mortality:
+                next_BA = (1.0 - q_total) * p.BA + p.BAI5
+                next_stems = (1.0 - q_total) * p.stems
+                next_age = p.age + years
             else:
-                stems_other = stems_crowd = 0.0
-            p.stems_Mortality = max(0.0, stems_other + stems_crowd)
+                next_BA = p.BA
+                next_stems = p.stems
+                next_age = p.age
 
-        # 5a) competition + volume at end pre‑removal
-        for p in self.parts:
-            BA_other = safe_sum(q.BA1 for q in self.parts if q is not p)
-            N_other = safe_sum(q.stems1 for q in self.parts if q is not p)
+            next_QMD = self.getQMD(next_BA, next_stems)
+            next_state.append({
+                "part": p,
+                "BA": next_BA,
+                "stems": next_stems,
+                "age": next_age,
+                "QMD": next_QMD,
+            })
+
+        # 4) Competition & volumes on the post-mortality/post-growth state
+        for idx, p in enumerate(self.parts):
+            BA_other = _safe_sum(ns["BA"] for j, ns in enumerate(next_state) if j != idx)
+            N_other = _safe_sum(ns["stems"] for j, ns in enumerate(next_state) if j != idx)
             QMD_other = self.getQMD(BA_other, N_other)
-            p.HK1 = (QMD_other / (p.QMD1 if p.QMD1 > 0 else 1e-9)) * BA_other
+            HK_next = (QMD_other / (next_state[idx]["QMD"] if next_state[idx]["QMD"] > 0 else 1e-9)) * BA_other
+            next_state[idx]["HK"] = HK_next
 
-        for p in self.parts:
-            p.VOL1 = self._volume_for(p, p.BA1, p.QMD1, p.age2, p.stems1, p.HK1)
+        for idx, p in enumerate(self.parts):
+            ns = next_state[idx]
+            ns["VOL"] = p.getVolume(
+                BA=ns["BA"],
+                QMD=ns["QMD"],
+                age=ns["age"],
+                stems=ns["stems"],
+                HK=ns["HK"],
+            )
+            ns["volume_increment"] = ns["VOL"] - start_state[idx]["VOL"]
 
-        # 5b) after natural mortality (no thinning inside grow(); do thinning between periods)
-        for p in self.parts:
-            p.BA2 = max(0.0, p.BA1 - p.BA_Mortality)
-            p.stems2 = max(0.0, p.stems1 - p.stems_Mortality)
-            p.QMD2 = self.getQMD(p.BA2, p.stems2)
-
-        for p in self.parts:
-            BA_other = safe_sum(q.BA2 for q in self.parts if q is not p)
-            N_other = safe_sum(q.stems2 for q in self.parts if q is not p)
-            QMD_other = self.getQMD(BA_other, N_other)
-            p.HK2 = (QMD_other / (p.QMD2 if p.QMD2 > 0 else 1e-9)) * BA_other
-
-        for p in self.parts:
-            p.VOL2 = self._volume_for(p, p.BA2, p.QMD2, p.age2, p.stems2, p.HK2)
-
-        # 6) Commit net end-of-period state; return shape expected by tests
+        # 5) Commit the new net state and return per-species summary
         period = {}
-        for p in self.parts:
-            p.gross_volume_increment = p.VOL1 - p.VOL0
-            p.BA, p.stems, p.QMD, p.age, p.VOL = p.BA2, p.stems2, p.QMD2, p.age2, p.VOL2
+        for idx, p in enumerate(self.parts):
+            ns = next_state[idx]
+            p.gross_volume_increment = ns["volume_increment"]  # net increment after mortality
+            p.volume_increment = ns["volume_increment"]
 
-            key = p.trädslag.value  # "Tall", "Gran", "Björk", ...
+            p.BA = ns["BA"]
+            p.stems = ns["stems"]
+            p.QMD = ns["QMD"]
+            p.age = ns["age"]
+            p.HK = ns.get("HK", p.HK)
+            p.VOL = ns["VOL"]
+
+            key = p.trädslag.value   # e.g. "Tall", "Gran", "Björk", ...
             period.setdefault(key, []).append(
                 {
                     "N1": p.stems,
                     "BA1": p.BA,
                     "QMD1": p.QMD,
                     "VOL1": p.VOL,
-                    # optional provenance (ignored by your asserts)
-                    "N0": p.stems1,
-                    "BA0": p.BA1,
-                    "QMD0": p.QMD1,
-                    "VOL0": p.VOL1,
+                    # Provenance (optional, handy for debugging)
+                    "N0": start_state[idx]["stems"],
+                    "BA0": start_state[idx]["BA"],
+                    "QMD0": start_state[idx]["QMD"],
+                    "VOL0": start_state[idx]["VOL"],
                 }
             )
 
-        # final housekeeping for the new state
+        # Finally refresh stand-level metrics for the new state
         self._assign_current_state_metrics()
         return period
 
-    # legacy wrapper used by some old calls
-    def grow5(self, mortality=True):
+    # Simple 5-year wrapper, matching the original model’s interface
+    def grow5(self, mortality: bool = True):
         return self.grow(years=5, apply_mortality=mortality)
+    
+    def _volume_for(self, part, BA, QMD, age, stems, HK):
+        BA   = part.BA   if BA   is None else BA
+        age  = part.age  if age  is None else age
+        stems = part.stems if stems is None else stems
+
+        if QMD is None:
+            QMD = self.getQMD(BA, stems)
+
+        if HK is None:
+            # Recompute competition index for this part from current stand state
+            BA_other = sum(q.BA for q in self.Parts if q is not part)
+            N_other  = sum(q.stems for q in self.Parts if q is not part)
+            QMD_other = self.getQMD(BA_other, N_other)
+            HK = (QMD_other / QMD) * BA_other if QMD > 0 else 0.0
+
+        return part.getVolume(
+            BA=BA,
+            QMD=QMD,
+            age=age,
+            stems=stems,
+            HK=HK,
+        )
+
+    
 
 def install_eko_compat():
     """

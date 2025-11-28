@@ -28,10 +28,12 @@ ENG_FROM_CLASS = {
 SWE_FROM_CLASS = {cls: swe for swe, cls in SWE_TO_CLASS.items()}
 
 ABSOLUTE_TOLERANCES = {
-    'N': 25.0,
-    'BA': 0.8,
-    'QMD': 0.8,
-    'VOL': 8.0,
+    # Keep very tight parity with Excel exports; deviations beyond these should
+    # be treated as adjustments rather than reported deltas.
+    'N': 0.1,
+    'BA': 0.1,
+    'QMD': 0.1,
+    'VOL': 0.1,
 }
 
 

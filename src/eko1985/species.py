@@ -1,7 +1,31 @@
 """Species-specific cohort implementations."""
 from __future__ import annotations
 
-from math import exp, log
+from math import exp
+from math import log as _math_log
+
+
+# -------------------------------------------------------------------
+# Safe log wrapper
+# -------------------------------------------------------------------
+def log(x, eps: float = 1e-9) -> float:
+    """
+    Safe natural logarithm:
+    - clamps non‑positive inputs to a small positive value (eps),
+    - tolerates None and non‑numeric values by falling back to eps.
+
+    This mimics the old C behavior where log(0) → very large negative
+    (and thus exp(...) → ~0), but avoids Python's ValueError.
+    """
+    if x is None:
+        return _math_log(eps)
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return _math_log(eps)
+    if x <= 0.0:
+        x = eps
+    return _math_log(x)
 
 from .base import EkoStandPart
 from .enums import Trädslag

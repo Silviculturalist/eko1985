@@ -3,6 +3,7 @@ name = "eko1985"
 version = "0.1.0"
 dependencies = [
     "matplotlib",
+    "pyforestry"
 ]
 
 [project.scripts]

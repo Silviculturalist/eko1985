@@ -21,10 +21,10 @@ ENG_TO_SWE = {
 SWE_TO_ENG = {swe: eng for eng, swe in ENG_TO_SWE.items()}
 
 ABS_TOLERANCES = {
-    'N': 25.0,
-    'BA': 0.8,
-    'QMD': 0.8,
-    'VOL': 8.0,
+    'N': 0.1,
+    'BA': 0.1,
+    'QMD': 0.1,
+    'VOL': 0.1,
 }
 
 
@@ -86,7 +86,9 @@ def test_model_management_pipeline_runs(xls_path: Path, artifacts_dir: Path) -> 
                 if model_value is None or expected_value is None:
                     assert delta_value is None
                 else:
-                    assert delta_value == pytest.approx(
-                        model_value - expected_value,
-                        abs=1e-9,
-                    )
+                    # Delta should match the reported model - expected
+                    assert delta_value == pytest.approx(model_value - expected_value, abs=1e-9)
+                    # And respect the per-field absolute tolerance
+                    tol = ABS_TOLERANCES.get(key)
+                    if tol is not None:
+                        assert abs(delta_value) <= tol + 1e-9

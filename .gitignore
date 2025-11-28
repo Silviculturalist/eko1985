@@ -1,2 +1,9 @@
 __pycache__/
 *.pyc
+*.png
+*.cpp
+*.h
+*.sln
+*.vcxproj
+*/eko1985.egg-info/*
+*.var
