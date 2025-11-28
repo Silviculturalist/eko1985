@@ -36,7 +36,7 @@ def _align_species(snapshot: dict) -> dict[str, dict]:
 
     aligned: dict[str, dict] = {}
     for eng, values in (snapshot.get("species") or {}).items():
-        swe = ENG_TO_SWE.get(eng, eng)
+        swe = ENG_TO_SWE.get(str(eng), str(eng))
         aligned[swe] = values
     return aligned
 

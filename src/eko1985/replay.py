@@ -20,7 +20,7 @@ SWE_TO_CLASS = {
     "Ek": EkoOak,
     "Öv.löv": EkoBroadleaf,
 }
-ENG_FROM_CLASS = {
+ENG_FROM_CLASS: dict[type[EkoStandPart], str] = {
     EkoPine: "Pine",
     EkoSpruce: "Spruce",
     EkoBirch: "Birch",
@@ -118,7 +118,9 @@ def _snapshot_single(stand: EkoStand) -> tuple[str, dict[str, float | None]]:
     stand._refresh_competition_vars()
 
     part = stand.Parts[0]
-    eng = ENG_FROM_CLASS.get(type(part), part.__class__.__name__)
+    eng = ENG_FROM_CLASS.get(type(part))
+    if eng is None:
+        eng = part.__class__.__name__
     volume = stand._volume_for(part, part.BA, part.QMD, part.age, part.stems, part.HK)
     return eng, dict(N=part.stems, BA=part.BA, QMD=part.QMD, VOL=volume, age=part.age)
 

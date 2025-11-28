@@ -6,7 +6,7 @@ from pathlib import Path
 import math
 import os
 import posixpath
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Sequence, overload
 import xml.etree.ElementTree as ET
 from zipfile import ZipFile
 
@@ -33,7 +33,15 @@ class _ILocAccessor:
     def __init__(self, sheet: "_Sheet") -> None:
         self._sheet = sheet
 
-    def __getitem__(self, key):  # type: ignore[override]
+    @overload
+    def __getitem__(self, key: tuple[int, int]) -> object:
+        ...
+
+    @overload
+    def __getitem__(self, key: int) -> _SheetRow:
+        ...
+
+    def __getitem__(self, key: int | tuple[int, int]) -> object | _SheetRow:  # type: ignore[override]
         if isinstance(key, tuple):
             row, col = key
             if isinstance(row, slice) or isinstance(
@@ -338,13 +346,16 @@ def _parse_general_sheet(sheet: _Sheet) -> list[dict]:
     events: list[dict] = []
     for ei, i in enumerate(events_idx):
         typ = sheet.iloc[i, 1]
-        period = sheet.iloc[i, 0]
-        try:
-            period = int(period)
-        except Exception:
-            period = (
-                ei if typ == "Start" else (events[-1]["period"] + 1 if events else 0)
-            )
+        period_raw = sheet.iloc[i, 0]
+        if isinstance(period_raw, (int, float, str)):
+            try:
+                period = int(period_raw)
+            except Exception:
+                period = (
+                    ei if typ == "Start" else (events[-1]["period"] + 1 if events else 0)
+                )
+        else:
+            period = ei if typ == "Start" else (events[-1]["period"] + 1 if events else 0)
 
         # species rows for a block can start 1 row above the event label in some exports (e.g., 'Tall' above 'Start')
         next_boundary = next((idx for idx in events_idx if idx > i), len(sheet))
@@ -413,6 +424,9 @@ def _parse_oversight_extractions(
             continue
 
         if current is None:
+            continue
+
+        if not isinstance(label, str):
             continue
 
         if label in species_order:

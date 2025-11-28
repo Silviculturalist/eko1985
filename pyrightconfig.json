@@ -1,0 +1,17 @@
+{
+  "include": ["src", "tests", "scripts"],
+  "exclude": [
+    "**/.ipynb_checkpoints",
+    "**/__pycache__",
+    "assets",
+    "plots",
+    "PRODMOD examples",
+    "ProdMod2_Cpp",
+    "scripts/ekotest.ipynb"
+  ],
+  "extraPaths": ["src", "typings"],
+  "stubPath": "typings",
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
+  "reportMissingTypeStubs": "none"
+}
