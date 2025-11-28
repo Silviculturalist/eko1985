@@ -1,4 +1,5 @@
 """Enumerations used across the Eko 1985 model."""
+
 from __future__ import annotations
 
 from enum import Enum

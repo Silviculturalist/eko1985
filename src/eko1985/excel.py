@@ -1,4 +1,5 @@
 """Excel parsing helpers used by the Eko 1985 tooling."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -35,7 +36,9 @@ class _ILocAccessor:
     def __getitem__(self, key):  # type: ignore[override]
         if isinstance(key, tuple):
             row, col = key
-            if isinstance(row, slice) or isinstance(col, slice):  # pragma: no cover - sanity
+            if isinstance(row, slice) or isinstance(
+                col, slice
+            ):  # pragma: no cover - sanity
                 raise TypeError("slice access is not supported")
             return self._sheet._get_value(int(row), int(col))
         return self._sheet._get_row(int(key))
@@ -102,7 +105,7 @@ def _to_num(x):
 
 def _to_str(x):
     s = str(x)
-    return None if s == 'nan' else s
+    return None if s == "nan" else s
 
 
 _MAIN_NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -114,7 +117,7 @@ def _column_index_from_ref(ref: str) -> int:
     col = 0
     for ch in ref:
         if ch.isalpha():
-            col = col * 26 + (ord(ch.upper()) - ord('A') + 1)
+            col = col * 26 + (ord(ch.upper()) - ord("A") + 1)
         else:
             break
     return max(col - 1, 0)
@@ -129,7 +132,7 @@ def _read_shared_strings(zf: ZipFile) -> list[str]:
     ns = {"main": _MAIN_NS}
     strings: list[str] = []
     for si in tree.findall("main:si", ns):
-        parts = [t.text or "" for t in si.findall('.//main:t', ns)]
+        parts = [t.text or "" for t in si.findall(".//main:t", ns)]
         strings.append("".join(parts))
     return strings
 
@@ -158,7 +161,9 @@ def _read_sheet_targets(zf: ZipFile) -> dict[str, str]:
     return sheets
 
 
-def _read_cell_value(cell: ET.Element, shared_strings: list[str], ns: dict[str, str]) -> object:
+def _read_cell_value(
+    cell: ET.Element, shared_strings: list[str], ns: dict[str, str]
+) -> object:
     cell_type = cell.get("t")
     if cell_type == "s":
         value = cell.find("main:v", ns)
@@ -168,9 +173,11 @@ def _read_cell_value(cell: ET.Element, shared_strings: list[str], ns: dict[str, 
         return shared_strings[idx] if 0 <= idx < len(shared_strings) else None
     if cell_type == "b":
         value = cell.find("main:v", ns)
-        return value.text == "1" if value is not None and value.text is not None else None
+        return (
+            value.text == "1" if value is not None and value.text is not None else None
+        )
     if cell_type == "inlineStr":
-        parts = [t.text or "" for t in cell.findall('.//main:t', ns)]
+        parts = [t.text or "" for t in cell.findall(".//main:t", ns)]
         return "".join(parts)
     value = cell.find("main:v", ns)
     if value is None or value.text is None:
@@ -234,40 +241,62 @@ def _parse_site_variables(sheet: _Sheet) -> dict:
         return None
 
     # Geographic
-    lat_pos = find('Latitud')
-    alt_pos = find('Altitud')
-    omr_pos = find('Område')
+    lat_pos = find("Latitud")
+    alt_pos = find("Altitud")
+    omr_pos = find("Område")
     lat = _to_num(sheet.iat(lat_pos[0] + 1, lat_pos[1])) if lat_pos else None
     alt = _to_num(sheet.iat(alt_pos[0] + 1, alt_pos[1])) if alt_pos else None
     region_raw = _to_str(sheet.iat(omr_pos[0] + 1, omr_pos[1])) if omr_pos else None
     region_map = {
-        'Syd': 'South', 'Södra': 'South', 'SÖDRA': 'South', 'Södra Sverige': 'South',
-        'Mellan': 'Central', 'Centrala': 'Central', 'Central': 'Central',
-        'Nord': 'North', 'Norra': 'North'
+        "Syd": "South",
+        "Södra": "South",
+        "SÖDRA": "South",
+        "Södra Sverige": "South",
+        "Mellan": "Central",
+        "Centrala": "Central",
+        "Central": "Central",
+        "Nord": "North",
+        "Norra": "North",
     }
     # region_raw may be None; use an empty-string fallback so the key is always a str for type checkers
     region = region_map.get(region_raw or "", None)
 
     # Soil moisture (very simple mapping)
-    torr_pos = find('Torr')
-    vat_pos = find('Våt')
+    torr_pos = find("Torr")
+    vat_pos = find("Våt")
     soil_code = 3
-    if torr_pos and _to_str(sheet.iat(torr_pos[0] + 1, torr_pos[1])) in ('Ja', 'True', '1'):
+    if torr_pos and _to_str(sheet.iat(torr_pos[0] + 1, torr_pos[1])) in (
+        "Ja",
+        "True",
+        "1",
+    ):
         soil_code = 1
-    if vat_pos and _to_str(sheet.iat(vat_pos[0] + 1, vat_pos[1])) in ('Ja', 'True', '1'):
+    if vat_pos and _to_str(sheet.iat(vat_pos[0] + 1, vat_pos[1])) in (
+        "Ja",
+        "True",
+        "1",
+    ):
         soil_code = 5
 
     # Vegetation (very simple mapping)
-    ort_pos = find('Ört/gräs')
-    blabar_pos = find('Blåbär/lingon')
+    ort_pos = find("Ört/gräs")
+    blabar_pos = find("Blåbär/lingon")
     veg_code = None
-    if ort_pos and _to_str(sheet.iat(ort_pos[0] + 1, ort_pos[1])) in ('Ja', 'True', '1'):
+    if ort_pos and _to_str(sheet.iat(ort_pos[0] + 1, ort_pos[1])) in (
+        "Ja",
+        "True",
+        "1",
+    ):
         veg_code = 1
-    if blabar_pos and _to_str(sheet.iat(blabar_pos[0] + 1, blabar_pos[1])) in ('Ja', 'True', '1'):
+    if blabar_pos and _to_str(sheet.iat(blabar_pos[0] + 1, blabar_pos[1])) in (
+        "Ja",
+        "True",
+        "1",
+    ):
         veg_code = 13
 
     # H100 site indices (dm → m)
-    si_label = find('Ståndortsindex, dm')
+    si_label = find("Ståndortsindex, dm")
     H100 = {}
     if si_label:
         species_row = sheet.iloc[si_label[0] + 1].tolist()
@@ -279,12 +308,12 @@ def _parse_site_variables(sheet: _Sheet) -> dict:
             H100[str(name)] = parsed / 10.0 if parsed is not None else None
 
     return {
-        'latitude': lat,
-        'altitude_m': alt,
-        'region': region,
-        'soil_moisture_code': soil_code,
-        'vegetation_code': veg_code,
-        'H100': H100
+        "latitude": lat,
+        "altitude_m": alt,
+        "region": region,
+        "soil_moisture_code": soil_code,
+        "vegetation_code": veg_code,
+        "H100": H100,
     }
 
 
@@ -299,17 +328,23 @@ def _parse_general_sheet(sheet: _Sheet) -> list[dict]:
       - 'after' state (Stamantal st/ha, Grundyta m2/ha, Dg cm, Volym m3sk/ha)
       - extraction (Uttag/självgallring), growth (Årlig tillväxt), and mortality flags
     """
-    events_idx = [i for i in range(len(sheet)) if sheet.iloc[i, 1] in ('Start', 'Tillväxt', 'Gallring')]
-    species_order = ['Tall', 'Gran', 'Björk', 'Bok', 'Ek', 'Öv.löv']
+    events_idx = [
+        i
+        for i in range(len(sheet))
+        if sheet.iloc[i, 1] in ("Start", "Tillväxt", "Gallring")
+    ]
+    species_order = ["Tall", "Gran", "Björk", "Bok", "Ek", "Öv.löv"]
 
-    events = []
+    events: list[dict] = []
     for ei, i in enumerate(events_idx):
         typ = sheet.iloc[i, 1]
         period = sheet.iloc[i, 0]
         try:
             period = int(period)
         except Exception:
-            period = ei if typ == 'Start' else (events[-1]['period'] + 1 if events else 0)
+            period = (
+                ei if typ == "Start" else (events[-1]["period"] + 1 if events else 0)
+            )
 
         # species rows for a block can start 1 row above the event label in some exports (e.g., 'Tall' above 'Start')
         next_boundary = next((idx for idx in events_idx if idx > i), len(sheet))
@@ -319,40 +354,81 @@ def _parse_general_sheet(sheet: _Sheet) -> list[dict]:
             sp = sheet.iloc[k, 2]
             if sp in species_order:
                 species_block[sp] = {
-                    'total_age': _to_num(sheet.iloc[k, 3]),
-                    'bh_age': _to_num(sheet.iloc[k, 4]),
-                    'h_top_m': _to_num(sheet.iloc[k, 5]),
-                    'after': {
-                        'N_stems_ha': _to_num(sheet.iloc[k, 6]),
-                        'BA_m2_ha': _to_num(sheet.iloc[k, 7]),
-                        'QMD_cm': _to_num(sheet.iloc[k, 8]),
-                        'VOL_m3sk_ha': _to_num(sheet.iloc[k, 9]),
+                    "total_age": _to_num(sheet.iloc[k, 3]),
+                    "bh_age": _to_num(sheet.iloc[k, 4]),
+                    "h_top_m": _to_num(sheet.iloc[k, 5]),
+                    "after": {
+                        "N_stems_ha": _to_num(sheet.iloc[k, 6]),
+                        "BA_m2_ha": _to_num(sheet.iloc[k, 7]),
+                        "QMD_cm": _to_num(sheet.iloc[k, 8]),
+                        "VOL_m3sk_ha": _to_num(sheet.iloc[k, 9]),
                     },
-                    'extraction': {
-                        'N_stems_ha': _to_num(sheet.iloc[k, 11]),
-                        'BA_m2_ha': _to_num(sheet.iloc[k, 12]),
-                        'QMD_cm': _to_num(sheet.iloc[k, 13]),
-                        'VOL_m3sk_ha': _to_num(sheet.iloc[k, 14]),
+                    "extraction": {
+                        "N_stems_ha": _to_num(sheet.iloc[k, 11]),
+                        "BA_m2_ha": _to_num(sheet.iloc[k, 12]),
+                        "QMD_cm": _to_num(sheet.iloc[k, 13]),
+                        "VOL_m3sk_ha": _to_num(sheet.iloc[k, 14]),
                     },
-                    'growth': {
-                        'lopande_m3sk_ha': _to_num(sheet.iloc[k, 16]),
-                        'medel_m3sk_ha': _to_num(sheet.iloc[k, 17]),
+                    "growth": {
+                        "lopande_m3sk_ha": _to_num(sheet.iloc[k, 16]),
+                        "medel_m3sk_ha": _to_num(sheet.iloc[k, 17]),
                     },
-                    'mortality': {
-                        'slow_BA_frac': _to_num(sheet.iloc[k, 18]),
-                        'fast_BA_frac': _to_num(sheet.iloc[k, 19]),
+                    "mortality": {
+                        "slow_BA_frac": _to_num(sheet.iloc[k, 18]),
+                        "fast_BA_frac": _to_num(sheet.iloc[k, 19]),
                     },
-                    'flags': {
-                        'nygallara': _to_str(sheet.iloc[k, 20]),
-                        'gallrad_nagongang': _to_str(sheet.iloc[k, 21]),
-                        'gallringshistorik': _to_str(sheet.iloc[k, 22]),
+                    "flags": {
+                        "nygallara": _to_str(sheet.iloc[k, 20]),
+                        "gallrad_nagongang": _to_str(sheet.iloc[k, 21]),
+                        "gallringshistorik": _to_str(sheet.iloc[k, 22]),
                     },
                 }
             k += 1
 
-        events.append({'period': period, 'type': typ, 'species': species_block})
+        events.append({"period": period, "type": typ, "species": species_block})
 
     return events
+
+
+def _parse_oversight_extractions(
+    sheet: _Sheet,
+) -> list[dict[str, dict[str, float | None]]]:
+    """
+    Reads the 'Oversight' sheet and returns per-Gallring removal blocks.
+
+    Structure observed in the supplied workbooks:
+      - A block headed with ``Gallring N`` followed by one row per species with
+        age, stems, basal area, and volume removed.
+    """
+
+    species_order = ["Tall", "Gran", "Björk", "Bok", "Ek", "Öv.löv"]
+    gallrings: list[dict[str, dict[str, float | None]]] = []
+    current: dict[str, dict[str, float | None]] | None = None
+
+    for i in range(len(sheet)):
+        label = sheet.iloc[i, 0]
+        if isinstance(label, str) and label.startswith("Gallring"):
+            current = {}
+            gallrings.append(current)
+            continue
+
+        if current is None:
+            continue
+
+        if label in species_order:
+            # Columns (by observation): [species, age, N, BA, VOL, ...]
+            age = _to_num(sheet.iloc[i, 1])
+            stems = _to_num(sheet.iloc[i, 2])
+            ba = _to_num(sheet.iloc[i, 3])
+            vol = _to_num(sheet.iloc[i, 4])
+            current[label] = {
+                "total_age": age,
+                "N_stems_ha": stems,
+                "BA_m2_ha": ba,
+                "VOL_m3sk_ha": vol,
+            }
+
+    return gallrings
 
 
 def _resolve_workbook_path(path: Path) -> Path:
@@ -377,10 +453,44 @@ def excel_to_json(xlsx_path: str) -> dict:
     path = _resolve_workbook_path(original_path)
     site_sheet = _load_sheet(path, "Site Variables")
     general_sheet = _load_sheet(path, "General")
+    # Prefer explicit thinning removals from 'Oversight' when present; fall
+    # back to the 'General' extraction columns otherwise.
+    try:
+        oversight_sheet = _load_sheet(path, "Oversight")
+        oversight_extractions = _parse_oversight_extractions(oversight_sheet)
+    except Exception:
+        oversight_extractions = []
+
+    events = _parse_general_sheet(general_sheet)
+
+    gallring_idx = 0
+    for ev in events:
+        if ev["type"] != "Gallring":
+            continue
+        if gallring_idx >= len(oversight_extractions):
+            gallring_idx += 1
+            continue
+        block = oversight_extractions[gallring_idx]
+        for swe_name, removal in block.items():
+            species_rec = ev["species"].get(swe_name)
+            if species_rec is None:
+                continue
+            # Replace extraction with Oversight's explicit removal values
+            species_rec["extraction"] = {
+                "N_stems_ha": removal.get("N_stems_ha"),
+                "BA_m2_ha": removal.get("BA_m2_ha"),
+                "QMD_cm": None,
+                "VOL_m3sk_ha": removal.get("VOL_m3sk_ha"),
+            }
+            # Prefer Oversight age for the removal if provided
+            if removal.get("total_age") is not None:
+                species_rec["total_age"] = removal["total_age"]
+        gallring_idx += 1
+
     return {
-        'source_file': os.path.basename(xlsx_path),
-        'site': _parse_site_variables(site_sheet),
-        'events': _parse_general_sheet(general_sheet),
+        "source_file": os.path.basename(xlsx_path),
+        "site": _parse_site_variables(site_sheet),
+        "events": events,
     }
 
 

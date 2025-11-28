@@ -1,4 +1,5 @@
 """Base classes for the Eko 1985 species parts."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -9,7 +10,6 @@ from .utils import qmd_cm
 
 if TYPE_CHECKING:
     from .stand import EkoStand
-
 
 
 class EvenAgedStand:
@@ -49,8 +49,16 @@ class EkoStandPart(EvenAgedStand):
         self.stand = stand
 
     # Alias used in tests’ _snapshot()
-    def volume_m3sk_ha(self, BA: float, QMD: float, age: float, stems: float, HK: float) -> float:
+    def volume_m3sk_ha(
+        self, BA: float, QMD: float, age: float, stems: float, HK: float
+    ) -> float:
         return self.getVolume(BA=BA, QMD=QMD, age=age, stems=stems, HK=HK)
+
+    def getVolume(
+        self, BA: float, QMD: float, age: float, stems: float, HK: float
+    ) -> float:  # type: ignore[override]
+        """Species implementations provide this; base exists for typing."""
+        raise NotImplementedError
 
 
 __all__ = ["EvenAgedStand", "EkoStandPart"]

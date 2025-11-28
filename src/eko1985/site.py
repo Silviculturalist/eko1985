@@ -1,4 +1,5 @@
 """Site description for the Eko 1985 stand model."""
+
 from __future__ import annotations
 
 from math import exp, log
@@ -54,7 +55,11 @@ class EkoStandSite:
             self.altitude = 0.0
 
         self.fertilised = bool(gödslad) if gödslad is not None else bool(fertilised)
-        self.thinned_5y = bool(gallrad_senaste_5år) if gallrad_senaste_5år is not None else bool(thinned_5y)
+        self.thinned_5y = (
+            bool(gallrad_senaste_5år)
+            if gallrad_senaste_5år is not None
+            else bool(thinned_5y)
+        )
         self.thinned = bool(gallrad) if gallrad is not None else bool(thinned)
         self.TAX77 = bool(tax77) if tax77 is not None else bool(TAX77)
         self.klimat_zon = klimat_zon
@@ -65,7 +70,9 @@ class EkoStandSite:
         elif isinstance(region, str) and region in ("North", "Central", "South"):
             self.region = region
         elif isinstance(region, str) and region in ("NORRA", "MELLERSTA", "SÖDRA"):
-            self.region = {"NORRA": "North", "MELLERSTA": "Central", "SÖDRA": "South"}[region]
+            self.region = {"NORRA": "North", "MELLERSTA": "Central", "SÖDRA": "South"}[
+                region
+            ]
         else:
             self.region = RegionSE.SÖDRA.value if region is None else str(region)
 
@@ -101,12 +108,16 @@ class EkoStandSite:
         self.DrySoil = sm == 1
         self.WetSoil = sm == 5
 
-    def _set_fieldlayer_and_vegcode(self, vegetation_code: int | None, latitude: float | None) -> None:
+    def _set_fieldlayer_and_vegcode(
+        self, vegetation_code: int | None, latitude: float | None
+    ) -> None:
         # Set FieldLayer flags
         if vegetation_code in (13, 14):  # bilberry/cowberry
             self.Bilberry_or_Cowberry = True
             self.HerbsGrassesNoFieldLayer = False
-        elif vegetation_code in (1, 2, 3, 4, 5, 6, 8, 9) or (vegetation_code == 7 and (latitude or 0) < 60):
+        elif vegetation_code in (1, 2, 3, 4, 5, 6, 8, 9) or (
+            vegetation_code == 7 and (latitude or 0) < 60
+        ):
             self.Bilberry_or_Cowberry = False
             self.HerbsGrassesNoFieldLayer = True
         else:
@@ -146,7 +157,10 @@ class EkoStandSite:
             return 0.0
         if H100_Pine < 8 or H100_Pine > 30:
             warnings.warn("SI Pine may be outside underlying material")
-        return exp(-0.9596 * log(H100_Pine * 10) + 0.01171 * (H100_Pine * 10) + 7.9209) / 10
+        return (
+            exp(-0.9596 * log(H100_Pine * 10) + 0.01171 * (H100_Pine * 10) + 7.9209)
+            / 10
+        )
 
     @staticmethod
     def __Leijon_Spruce_to_Pine(H100_Spruce: float | None) -> float:
@@ -154,7 +168,10 @@ class EkoStandSite:
             return 0.0
         if H100_Spruce < 8 or H100_Spruce > 33:
             warnings.warn("SI Spruce may be outside underlying material.")
-        return exp(1.6967 * log(H100_Spruce * 10) - 0.005179 * (H100_Spruce * 10) - 2.5397) / 10
+        return (
+            exp(1.6967 * log(H100_Spruce * 10) - 0.005179 * (H100_Spruce * 10) - 2.5397)
+            / 10
+        )
 
 
 __all__ = ["EkoStandSite"]

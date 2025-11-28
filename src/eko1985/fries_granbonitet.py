@@ -3,9 +3,9 @@ def jonsbon_to_decimal(jonsbon: float):
     return 1.2**n
 
 
-def jonson_1914_bonitet_mean_height_age_100(jonsbon:float):
+def jonson_1914_bonitet_mean_height_age_100(jonsbon: float):
     if jonsbon == 2:
-        n=27.7
+        n = 27.7
     elif jonsbon == 3:
         n = 22.4
     elif jonsbon == 4:

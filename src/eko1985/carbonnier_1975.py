@@ -1,23 +1,22 @@
 from dataclasses import dataclass
 from typing import Sequence
 import bisect
-import numpy as np
 
 
 @dataclass
 class CarbonnierHeightModel:
     """
     Carbonnier (1975) height development model for European beech.
-    
+
     The model is defined by:
         h_j = a_j + τ * b_j
-    
+
     where:
         h_j    = top height (m) at total age j (years)
         a_j    = age-specific base height
         b_j    = age-specific modifier
         τ      = site quality parameter derived from H100 (height at age 100)
-    
+
     Parameters
     ----------
     ages : list of float
@@ -44,15 +43,15 @@ class CarbonnierHeightModel:
         try:
             idx = self.ages.index(si_age)
         except ValueError:
-            raise ValueError(
-                f"si_age={si_age} not found in ages grid {self.ages}"
-            )
+            raise ValueError(f"si_age={si_age} not found in ages grid {self.ages}")
 
         a_si = self.a_vals[idx]
         b_si = self.b_vals[idx]
 
         if b_si == 0:
-            raise ZeroDivisionError("b coefficient at si_age is zero; cannot compute tau.")
+            raise ZeroDivisionError(
+                "b coefficient at si_age is zero; cannot compute tau."
+            )
 
         return (site_index - a_si) / b_si
 
@@ -95,7 +94,9 @@ class CarbonnierHeightModel:
     # ------------------------------------------------------------------
     # Height curve given site index (H100)
     # ------------------------------------------------------------------
-    def height_from_SI(self, age: float, site_index: float, si_age: float = 100.0) -> float:
+    def height_from_SI(
+        self, age: float, site_index: float, si_age: float = 100.0
+    ) -> float:
         """
         Compute height at age for a stand with given site index (H100).
         """

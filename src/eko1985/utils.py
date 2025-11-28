@@ -1,5 +1,5 @@
-
 """Utility helpers shared across the model."""
+
 from __future__ import annotations
 
 from math import pi, sqrt

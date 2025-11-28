@@ -1,4 +1,5 @@
 """Stand container and compatibility helpers."""
+
 from __future__ import annotations
 
 from math import pi
@@ -8,7 +9,6 @@ from .base import EkoStandPart, EvenAgedStand
 from .site import EkoStandSite
 from .species import EkoBeech, EkoOak
 
-from math import pi
 
 def _safe_sum(iterable):
     total = 0.0
@@ -22,17 +22,24 @@ class EkoStand(EvenAgedStand):
     parts: list[EkoStandPart]
     site:  EkoStandSite
     """
+
     def __init__(self, parts, site: EkoStandSite):
         if not all(isinstance(p, EkoStandPart) for p in parts):
             raise ValueError("All StandParts must be EkoStandPart objects!")
-        self.parts = parts           # Swedish-style API
-        self.Parts = self.parts      # Back-compat alias
+        self.parts = parts  # Swedish-style API
+        self.Parts = self.parts  # Back-compat alias
         self.Site = site
+        self.volume_scale: float | None = None
 
         # Optional sanity: warn if Beech/Oak in non-southern regions
-        if any(isinstance(p, EkoBeech) for p in self.parts) and self.Site.region not in ("Central", "South"):
+        if any(
+            isinstance(p, EkoBeech) for p in self.parts
+        ) and self.Site.region not in ("Central", "South"):
             warnings.warn("Setting Beech stand outside of southern Sweden!")
-        if any(isinstance(p, EkoOak) for p in self.parts) and self.Site.region not in ("Central", "South"):
+        if any(isinstance(p, EkoOak) for p in self.parts) and self.Site.region not in (
+            "Central",
+            "South",
+        ):
             warnings.warn("Setting Oak stand outside of southern Sweden!")
 
         for p in self.parts:
@@ -70,8 +77,7 @@ class EkoStand(EvenAgedStand):
         """
         self._competition_metrics()
         for p in self.parts:
-            p.VOL = p.getVolume(BA=p.BA, QMD=p.QMD, age=p.age,
-                                stems=p.stems, HK=p.HK)
+            p.VOL = p.getVolume(BA=p.BA, QMD=p.QMD, age=p.age, stems=p.stems, HK=p.HK)
 
         self.StandBA = _safe_sum(p.BA for p in self.parts)
         self.StandStems = _safe_sum(p.stems for p in self.parts)
@@ -86,7 +92,7 @@ class EkoStand(EvenAgedStand):
     # ------------------------------------------------------------------
     def thin(self, removals: dict):
         """
-        removals: dict keyed by part.trädslag (enum) or species string; 
+        removals: dict keyed by part.trädslag (enum) or species string;
                   value = BA (m²/ha) to remove.
         Stems removed computed at current QMD (constant-QMD removal).
         """
@@ -127,15 +133,18 @@ class EkoStand(EvenAgedStand):
         # Snapshot starting metrics
         start_state = []
         for p in self.parts:
-            start_state.append({
-                "part": p,
-                "BA": p.BA,
-                "stems": p.stems,
-                "age": p.age,
-                "QMD": p.QMD,
-                "VOL": p.getVolume(BA=p.BA, QMD=p.QMD, age=p.age,
-                                   stems=p.stems, HK=p.HK),
-            })
+            start_state.append(
+                {
+                    "part": p,
+                    "BA": p.BA,
+                    "stems": p.stems,
+                    "age": p.age,
+                    "QMD": p.QMD,
+                    "VOL": p.getVolume(
+                        BA=p.BA, QMD=p.QMD, age=p.age, stems=p.stems, HK=p.HK
+                    ),
+                }
+            )
             p.VOL0 = start_state[-1]["VOL"]
 
         # 1) Mortality fractions + 2) Basal area increment (on start state)
@@ -155,11 +164,13 @@ class EkoStand(EvenAgedStand):
                 ba_quotient_chronic_mortality=BAQ_crowd,
                 ba_quotient_acute_mortality=BAQ_other,
             )
-            mortality.append({
-                "q_crowd": BAQ_crowd,
-                "q_other": BAQ_other,
-                "q_total": BAQ_crowd + BAQ_other,
-            })
+            mortality.append(
+                {
+                    "q_crowd": BAQ_crowd,
+                    "q_other": BAQ_other,
+                    "q_total": BAQ_crowd + BAQ_other,
+                }
+            )
 
         # 3) Apply mortality + growth in one step (C++: ApplyMortalityAndGrowth)
         next_state = []
@@ -175,20 +186,29 @@ class EkoStand(EvenAgedStand):
                 next_age = p.age
 
             next_QMD = self.getQMD(next_BA, next_stems)
-            next_state.append({
-                "part": p,
-                "BA": next_BA,
-                "stems": next_stems,
-                "age": next_age,
-                "QMD": next_QMD,
-            })
+            next_state.append(
+                {
+                    "part": p,
+                    "BA": next_BA,
+                    "stems": next_stems,
+                    "age": next_age,
+                    "QMD": next_QMD,
+                }
+            )
 
         # 4) Competition & volumes on the post-mortality/post-growth state
         for idx, p in enumerate(self.parts):
-            BA_other = _safe_sum(ns["BA"] for j, ns in enumerate(next_state) if j != idx)
-            N_other = _safe_sum(ns["stems"] for j, ns in enumerate(next_state) if j != idx)
+            BA_other = _safe_sum(
+                ns["BA"] for j, ns in enumerate(next_state) if j != idx
+            )
+            N_other = _safe_sum(
+                ns["stems"] for j, ns in enumerate(next_state) if j != idx
+            )
             QMD_other = self.getQMD(BA_other, N_other)
-            HK_next = (QMD_other / (next_state[idx]["QMD"] if next_state[idx]["QMD"] > 0 else 1e-9)) * BA_other
+            HK_next = (
+                QMD_other
+                / (next_state[idx]["QMD"] if next_state[idx]["QMD"] > 0 else 1e-9)
+            ) * BA_other
             next_state[idx]["HK"] = HK_next
 
         for idx, p in enumerate(self.parts):
@@ -203,10 +223,12 @@ class EkoStand(EvenAgedStand):
             ns["volume_increment"] = ns["VOL"] - start_state[idx]["VOL"]
 
         # 5) Commit the new net state and return per-species summary
-        period = {}
+        period: dict[str, list[dict[str, float]]] = {}
         for idx, p in enumerate(self.parts):
             ns = next_state[idx]
-            p.gross_volume_increment = ns["volume_increment"]  # net increment after mortality
+            p.gross_volume_increment = ns[
+                "volume_increment"
+            ]  # net increment after mortality
             p.volume_increment = ns["volume_increment"]
 
             p.BA = ns["BA"]
@@ -216,7 +238,7 @@ class EkoStand(EvenAgedStand):
             p.HK = ns.get("HK", p.HK)
             p.VOL = ns["VOL"]
 
-            key = p.trädslag.value   # e.g. "Tall", "Gran", "Björk", ...
+            key = p.trädslag.value  # e.g. "Tall", "Gran", "Björk", ...
             period.setdefault(key, []).append(
                 {
                     "N1": p.stems,
@@ -238,10 +260,10 @@ class EkoStand(EvenAgedStand):
     # Simple 5-year wrapper, matching the original model’s interface
     def grow5(self, mortality: bool = True):
         return self.grow(years=5, apply_mortality=mortality)
-    
+
     def _volume_for(self, part, BA, QMD, age, stems, HK):
-        BA   = part.BA   if BA   is None else BA
-        age  = part.age  if age  is None else age
+        BA = part.BA if BA is None else BA
+        age = part.age if age is None else age
         stems = part.stems if stems is None else stems
 
         if QMD is None:
@@ -250,7 +272,7 @@ class EkoStand(EvenAgedStand):
         if HK is None:
             # Recompute competition index for this part from current stand state
             BA_other = sum(q.BA for q in self.Parts if q is not part)
-            N_other  = sum(q.stems for q in self.Parts if q is not part)
+            N_other = sum(q.stems for q in self.Parts if q is not part)
             QMD_other = self.getQMD(BA_other, N_other)
             HK = (QMD_other / QMD) * BA_other if QMD > 0 else 0.0
 
@@ -262,7 +284,6 @@ class EkoStand(EvenAgedStand):
             HK=HK,
         )
 
-    
 
 def install_eko_compat():
     """
@@ -272,17 +293,17 @@ def install_eko_compat():
     Call this once AFTER your Eko* classes are defined and BEFORE constructing any EkoStand.
     """
     g = globals()
-    if 'EkoStand' not in g:
+    if "EkoStand" not in g:
         raise RuntimeError("Define EkoStand/EkoStandSite and species classes first.")
 
-    EkoStand = g['EkoStand']
+    EkoStand = g["EkoStand"]
 
     if getattr(EkoStand, "_eko_forward_safe", False):
         return  # already installed
 
     # ---- Lazy totals: work even before constructor sets them explicitly
     def _parts(self):
-        return getattr(self, 'Parts', getattr(self, 'parts', [])) or []
+        return getattr(self, "Parts", getattr(self, "parts", [])) or []
 
     def _get_StandBA(self):
         # Use cached value if later set by the model; otherwise compute on the fly
@@ -302,23 +323,33 @@ def install_eko_compat():
         self._StandStems = float(v)
 
     # Attach as data-descriptor properties (safe to assign later)
-    EkoStand.StandBA = property(_get_StandBA, _set_StandBA, doc="Total basal area (m²/ha), lazy-safe.")
-    EkoStand.StandStems = property(_get_StandStems, _set_StandStems, doc="Total stems (/ha), lazy-safe.")
+    EkoStand.StandBA = property(
+        _get_StandBA, _set_StandBA, doc="Total basal area (m²/ha), lazy-safe."
+    )
+    EkoStand.StandStems = property(
+        _get_StandStems, _set_StandStems, doc="Total stems (/ha), lazy-safe."
+    )
 
     # ---- Guard the first metrics pass: ensure QMD exists before any volume call
     # If your class already does this, the wrapper is a no-op overhead.
     orig = getattr(EkoStand, "_assign_current_state_metrics", None)
     if callable(orig):
+
         def _assign_current_state_metrics_wrapped(self, *a, **kw):
             parts = _parts(self)
             # Ensure QMD is available before any formula may try to use it
             for p in parts:
-                if (getattr(p, "QMD", None) in (None, 0)) and (getattr(p, "BA", 0) > 0) and (getattr(p, "stems", 0) > 0):
+                if (
+                    (getattr(p, "QMD", None) in (None, 0))
+                    and (getattr(p, "BA", 0) > 0)
+                    and (getattr(p, "stems", 0) > 0)
+                ):
                     try:
                         p.QMD = self.getQMD(p.BA, p.stems)
                     except Exception:
                         pass
             return orig(self, *a, **kw)
+
         EkoStand._assign_current_state_metrics = _assign_current_state_metrics_wrapped
 
     EkoStand._eko_forward_safe = True
